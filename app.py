@@ -17,61 +17,125 @@ app = Flask(__name__)
 
 BASE_DIR = Path(__file__).parent
 INPUT_DIR = BASE_DIR / "WHITE" / "resized"
+THEME_DIR = BASE_DIR / "themes"
 OUTPUT_BASE = BASE_DIR / "output"
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Per-image prompts: {target_objects} describes what to apply the fabric to
-IMAGE_PROMPTS = {
-    "WHITE 3.jpg": {
-        "target": "the entire fabric and button closure area (but not the button itself)",
-        "desc": "Fabric & Button",
+# ── Themes ──────────────────────────────────────────────────────
+# Each theme has 3 room images. "classy" uses originals from the theme dir.
+# The theme files map a canonical key to the actual filename on disk.
+THEMES = {
+    "classy": {
+        "label": "Classy",
+        "files": {
+            "6":     "WHITE 6.jpg",
+            "FIT 1": "WHITE FIT 1.jpg",
+            "QLT 1": "WHITE QLT 1.jpg",
+        },
     },
-    "WHITE 4.jpg": {
-        "target": "only the top-left fabric piece and the fabric tail/loop",
-        "desc": "Fabric Corner & Tail",
+    "modern": {
+        "label": "Modern",
+        "files": {
+            "6":     "MODERN 6.jpg",
+            "FIT 1": "MODERN FIT 1.jpg",
+            "QLT 1": "MODERN QLT 1.jpg",
+        },
     },
-    "WHITE 5.jpg": {
-        "target": "only the pillow (the pillowcase fabric)",
-        "desc": "Pillow Close-up",
-    },
-    "WHITE 6.jpg": {
-        "target": "the entire bed linen including the duvet cover, bed sheet, and all pillows",
-        "desc": "Full Bed Set",
-    },
-    "WHITE 7.jpg": {
-        "target": "the top part of the bed - the fitted sheet fabric on top of the mattress",
-        "desc": "Fitted Sheet Top",
-    },
-    "WHITE 9.jpg": {
-        "target": "the bottom-left side elastic/gathered fabric",
-        "desc": "Elastic Fabric",
-    },
-    "WHITE 10 ABC.jpg": {
-        "target": "the bolster (the cylindrical pillow)",
-        "desc": "Bolster",
-    },
-    "WHITE 11 APC.jpg": {
-        "target": "both pillows",
-        "desc": "Pillows",
-    },
-    "WHITE FIT 1.jpg": {
-        "target": "the entire bed sheet, all pillows, the bolster, and the blanket",
-        "desc": "Fitted Bed Set",
-    },
-    "WHITE QLT 1.jpg": {
-        "target": "the bed duvet/quilt, all pillows, and the blanket",
-        "desc": "Quilt Bed Set",
-    },
-    "WHITE QLT 2.jpg": {
-        "target": "the entire center bed including the duvet/quilt, all pillows, and blankets",
-        "desc": "Quilt Center Bed",
+    "playful": {
+        "label": "Playful",
+        "files": {
+            "6":     "PLAYFUL 6.jpg",
+            "FIT 1": "PLAYFUL FIT 1.jpg",
+            "QLT 1": "PLAYFUL QLT 1.jpg",
+        },
     },
 }
 
+# ── Image configs ───────────────────────────────────────────────
+# "source": "resized" = always from WHITE/resized
+# "source": "theme"   = from output/themes/{theme}/
+IMAGE_CONFIGS = [
+    {
+        "key": "WHITE 10 ABC.jpg",
+        "source": "resized",
+        "target": "the bolster (the cylindrical pillow)",
+        "desc": "Bolster",
+    },
+    {
+        "key": "WHITE 11 APC.jpg",
+        "source": "resized",
+        "target": "both pillows",
+        "desc": "Pillows",
+    },
+    {
+        "key": "WHITE 3.jpg",
+        "source": "resized",
+        "target": "the entire fabric and button closure area (but not the button itself)",
+        "desc": "Fabric & Button",
+    },
+    {
+        "key": "WHITE 4.jpg",
+        "source": "resized",
+        "target": "only the top-left fabric piece and the fabric tail/loop",
+        "desc": "Fabric Corner & Tail",
+    },
+    {
+        "key": "WHITE 5.jpg",
+        "source": "resized",
+        "target": "only the pillow (the pillowcase fabric)",
+        "desc": "Pillow Close-up",
+    },
+    {
+        "key": "6",
+        "source": "theme",
+        "target": "the entire bed linen including the duvet cover, bed sheet, and all pillows",
+        "desc": "Full Bed Set",
+    },
+    {
+        "key": "WHITE 7.jpg",
+        "source": "resized",
+        "target": "the top part of the bed - the fitted sheet fabric on top of the mattress",
+        "desc": "Fitted Sheet Top",
+    },
+    {
+        "key": "WHITE 9.jpg",
+        "source": "resized",
+        "target": "the bottom-left side elastic/gathered fabric",
+        "desc": "Elastic Fabric",
+    },
+    {
+        "key": "FIT 1",
+        "source": "theme",
+        "target": "the entire bed sheet, all pillows, the bolster, and the blanket",
+        "desc": "Fitted Bed Set",
+    },
+    {
+        "key": "QLT 1",
+        "source": "theme",
+        "target": "the bed duvet/quilt, all pillows, and the blanket",
+        "desc": "Quilt Bed Set",
+    },
+    {
+        "key": "WHITE QLT 2.jpg",
+        "source": "resized",
+        "target": "the entire center bed including the duvet/quilt, all pillows, and blankets",
+        "desc": "Quilt Center Bed",
+    },
+]
+
+
+def resolve_source_path(cfg: dict, theme: str) -> Path:
+    """Get the actual file path for an image config given the selected theme."""
+    if cfg["source"] == "resized":
+        return INPUT_DIR / cfg["key"]
+    else:
+        # theme image
+        filename = THEMES[theme]["files"][cfg["key"]]
+        return THEME_DIR / theme / filename
+
 
 def build_prompt(target: str) -> str:
-    """Build the Gemini prompt for applying a fabric sample to target objects."""
     return (
         f"I'm providing two images. The FIRST image is a fabric sample showing the color/pattern I want. "
         f"The SECOND image is a product photo with white bedding.\n\n"
@@ -84,7 +148,6 @@ def build_prompt(target: str) -> str:
 
 
 def recolor_image(client, sample_bytes: bytes, sample_mime: str, image_path: Path, prompt: str) -> bytes | None:
-    """Send fabric sample + product image to Gemini. Returns image bytes or None."""
     with open(image_path, "rb") as f:
         product_bytes = f.read()
 
@@ -105,36 +168,53 @@ def recolor_image(client, sample_bytes: bytes, sample_mime: str, image_path: Pat
     for part in response.candidates[0].content.parts:
         if part.inline_data is not None:
             return part.inline_data.data
-
     return None
 
+
+# ── Routes ──────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     return FRONTEND_HTML
 
 
+@app.route("/api/themes")
+def list_themes():
+    return jsonify([{"key": k, "label": v["label"]} for k, v in THEMES.items()])
+
+
 @app.route("/api/images")
 def list_images():
-    """Return the list of template images with descriptions."""
+    theme = request.args.get("theme", "classy")
     result = []
-    for filename in sorted(IMAGE_PROMPTS.keys()):
+    for cfg in IMAGE_CONFIGS:
+        path = resolve_source_path(cfg, theme)
         result.append({
-            "filename": filename,
-            "desc": IMAGE_PROMPTS[filename]["desc"],
+            "key": cfg["key"],
+            "desc": cfg["desc"],
+            "source": cfg["source"],
+            "exists": path.exists(),
         })
     return jsonify(result)
 
 
 @app.route("/api/preview/<path:filename>")
 def preview_image(filename):
-    """Serve original template images for preview."""
+    """Serve from WHITE/resized."""
     return send_from_directory(str(INPUT_DIR), filename)
+
+
+@app.route("/api/preview-theme/<theme>/<path:key>")
+def preview_theme_image(theme, key):
+    """Serve a theme-based room image."""
+    if theme not in THEMES or key not in THEMES[theme]["files"]:
+        return "Not found", 404
+    filename = THEMES[theme]["files"][key]
+    return send_from_directory(str(THEME_DIR / theme), filename)
 
 
 @app.route("/api/upload-sample", methods=["POST"])
 def upload_sample():
-    """Upload a fabric sample image. Returns a sample_id for use in recolor."""
     if "sample" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -148,7 +228,6 @@ def upload_sample():
     sample_path = UPLOAD_DIR / f"{sample_id}{ext}"
     sample_path.write_bytes(data)
 
-    # Return a small preview
     img = Image.open(io.BytesIO(data))
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
@@ -157,21 +236,19 @@ def upload_sample():
     img.save(buf, "JPEG", quality=80)
     preview_b64 = base64.b64encode(buf.getvalue()).decode()
 
-    return jsonify({
-        "sample_id": sample_id,
-        "ext": ext,
-        "preview": preview_b64,
-    })
+    return jsonify({"sample_id": sample_id, "ext": ext, "preview": preview_b64})
 
 
 @app.route("/api/recolor-stream")
 def recolor_stream():
-    """SSE endpoint: apply uploaded fabric sample to all template images."""
     sample_id = request.args.get("sample_id", "").strip()
     sample_ext = request.args.get("ext", ".jpg").strip()
+    theme = request.args.get("theme", "classy").strip()
 
     if not sample_id:
         return jsonify({"error": "No sample_id provided"}), 400
+    if theme not in THEMES:
+        return jsonify({"error": f"Unknown theme: {theme}"}), 400
 
     sample_path = UPLOAD_DIR / f"{sample_id}{sample_ext}"
     if not sample_path.exists():
@@ -184,25 +261,24 @@ def recolor_stream():
     sample_bytes = sample_path.read_bytes()
     sample_mime = "image/jpeg" if sample_ext in (".jpg", ".jpeg") else "image/png"
 
-    output_dir = OUTPUT_BASE / sample_id
+    output_dir = OUTPUT_BASE / f"{sample_id}_{theme}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     client = genai.Client(api_key=api_key)
 
     def generate():
-        filenames = sorted(IMAGE_PROMPTS.keys())
-        total = len(filenames)
+        total = len(IMAGE_CONFIGS)
 
-        for i, filename in enumerate(filenames):
-            yield f"data: {json.dumps({'type': 'progress', 'index': i, 'total': total, 'filename': filename, 'status': 'processing'})}\n\n"
+        for i, cfg in enumerate(IMAGE_CONFIGS):
+            display_name = cfg["desc"]
+            yield f"data: {json.dumps({'type': 'progress', 'index': i, 'total': total, 'key': cfg['key'], 'status': 'processing'})}\n\n"
 
-            input_path = INPUT_DIR / filename
+            input_path = resolve_source_path(cfg, theme)
             if not input_path.exists():
-                yield f"data: {json.dumps({'type': 'result', 'index': i, 'filename': filename, 'status': 'error', 'message': 'Source not found'})}\n\n"
+                yield f"data: {json.dumps({'type': 'result', 'index': i, 'key': cfg['key'], 'status': 'error', 'message': f'Source not found: {input_path.name}'})}\n\n"
                 continue
 
-            target = IMAGE_PROMPTS[filename]["target"]
-            prompt = build_prompt(target)
+            prompt = build_prompt(cfg["target"])
 
             try:
                 img_bytes = recolor_image(client, sample_bytes, sample_mime, input_path, prompt)
@@ -212,7 +288,7 @@ def recolor_stream():
                     if img.mode == "RGBA":
                         img = img.convert("RGB")
 
-                    out_name = filename.replace("WHITE", sample_id)
+                    out_name = f"{cfg['desc'].replace(' ', '_')}_{theme}.jpg"
                     out_path = output_dir / out_name
                     img.save(out_path, "JPEG", quality=95)
 
@@ -222,12 +298,12 @@ def recolor_stream():
                     thumb.save(buf, "JPEG", quality=80)
                     b64 = base64.b64encode(buf.getvalue()).decode()
 
-                    yield f"data: {json.dumps({'type': 'result', 'index': i, 'filename': filename, 'status': 'ok', 'output': out_name, 'preview': b64})}\n\n"
+                    yield f"data: {json.dumps({'type': 'result', 'index': i, 'key': cfg['key'], 'status': 'ok', 'output': out_name, 'preview': b64})}\n\n"
                 else:
-                    yield f"data: {json.dumps({'type': 'result', 'index': i, 'filename': filename, 'status': 'error', 'message': 'No image returned by model'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'result', 'index': i, 'key': cfg['key'], 'status': 'error', 'message': 'No image returned by model'})}\n\n"
 
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'result', 'index': i, 'filename': filename, 'status': 'error', 'message': str(e)})}\n\n"
+                yield f"data: {json.dumps({'type': 'result', 'index': i, 'key': cfg['key'], 'status': 'error', 'message': str(e)})}\n\n"
 
             time.sleep(1)
 
@@ -244,6 +320,8 @@ def serve_output(filepath):
     return send_from_directory(str(OUTPUT_BASE), filepath)
 
 
+# ── Frontend ────────────────────────────────────────────────────
+
 FRONTEND_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -258,6 +336,12 @@ FRONTEND_HTML = """<!DOCTYPE html>
   .header h1 { font-size: 20px; font-weight: 600; margin-bottom: 16px; }
   .controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 
+  /* Theme selector */
+  .theme-selector { display: flex; gap: 8px; }
+  .theme-btn { padding: 8px 18px; border-radius: 8px; border: 2px solid #333; background: #222; color: #aaa; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .theme-btn:hover { border-color: #555; color: #ddd; }
+  .theme-btn.active { border-color: #4f46e5; color: #fff; background: #4f46e520; }
+
   /* Upload area */
   .upload-area { display: flex; align-items: center; gap: 12px; }
   .upload-box { width: 80px; height: 80px; border: 2px dashed #444; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; transition: border-color 0.2s; background: #222; }
@@ -265,6 +349,8 @@ FRONTEND_HTML = """<!DOCTYPE html>
   .upload-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
   .upload-box .placeholder { color: #666; font-size: 11px; text-align: center; padding: 4px; line-height: 1.3; }
   .upload-label { font-size: 13px; color: #aaa; max-width: 160px; }
+
+  .divider { width: 1px; height: 40px; background: #333; }
 
   .btn { padding: 10px 24px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
   .btn-primary { background: #4f46e5; color: white; }
@@ -281,6 +367,7 @@ FRONTEND_HTML = """<!DOCTYPE html>
   .card.done { border-color: #22c55e; }
   .card.error { border-color: #ef4444; }
   .card-header { padding: 12px 16px; font-size: 13px; font-weight: 500; color: #999; border-bottom: 1px solid #2a2a2a; display: flex; justify-content: space-between; align-items: center; }
+  .card-header .badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: #4f46e520; color: #818cf8; margin-left: 8px; }
   .card-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
   .card-status.waiting { background: #333; color: #888; }
   .card-status.processing { background: #4f46e520; color: #818cf8; }
@@ -301,12 +388,14 @@ FRONTEND_HTML = """<!DOCTYPE html>
 <div class="header">
   <h1>Bedding Fabric Recolor Tool</h1>
   <div class="controls">
+    <div class="theme-selector" id="themeSelector"></div>
+    <div class="divider"></div>
     <div class="upload-area">
       <div class="upload-box" id="uploadBox" onclick="document.getElementById('fileInput').click()">
-        <div class="placeholder" id="uploadPlaceholder">Click to upload fabric sample</div>
+        <div class="placeholder" id="uploadPlaceholder">Upload fabric sample</div>
       </div>
       <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleUpload(this)">
-      <div class="upload-label" id="uploadLabel">Upload a fabric sample image (solid color or pattern)</div>
+      <div class="upload-label" id="uploadLabel">Upload a fabric sample</div>
     </div>
     <button class="btn btn-primary" id="recolorBtn" onclick="startRecolor()" disabled>Apply Fabric</button>
     <div class="progress-bar-container" id="progressContainer">
@@ -319,28 +408,59 @@ FRONTEND_HTML = """<!DOCTYPE html>
 <div class="grid" id="imageGrid"></div>
 
 <script>
-let images = [];
-let currentSample = null; // { sample_id, ext, preview }
+let allImages = [];
+let themes = [];
+let selectedTheme = "classy";
+let currentSample = null;
+
+async function init() {
+  const res = await fetch("/api/themes");
+  themes = await res.json();
+  renderThemeButtons();
+  await loadImages();
+}
+
+function renderThemeButtons() {
+  const container = document.getElementById("themeSelector");
+  container.innerHTML = themes.map(t =>
+    `<button class="theme-btn ${t.key === selectedTheme ? 'active' : ''}"
+            data-theme="${t.key}" onclick="selectTheme('${t.key}')">${t.label}</button>`
+  ).join("");
+}
+
+async function selectTheme(key) {
+  selectedTheme = key;
+  renderThemeButtons();
+  await loadImages();
+}
 
 async function loadImages() {
-  const res = await fetch("/api/images");
-  images = await res.json();
+  const res = await fetch(`/api/images?theme=${selectedTheme}`);
+  allImages = await res.json();
   renderGrid();
+}
+
+function previewUrl(img) {
+  if (img.source === "theme") {
+    return `/api/preview-theme/${selectedTheme}/${encodeURIComponent(img.key)}`;
+  }
+  return `/api/preview/${encodeURIComponent(img.key)}`;
 }
 
 function renderGrid() {
   const grid = document.getElementById("imageGrid");
-  grid.innerHTML = images.map(img => {
-    const id = css(img.filename);
+  grid.innerHTML = allImages.map(img => {
+    const id = css(img.key);
+    const badge = img.source === "theme" ? `<span class="badge">${selectedTheme}</span>` : "";
     return `
     <div class="card" id="card-${id}">
       <div class="card-header">
-        <span>${img.desc}</span>
+        <span>${img.desc}${badge}</span>
         <span class="card-status waiting" id="status-${id}">Waiting</span>
       </div>
       <div class="card-images single" id="imgs-${id}">
         <div class="card-img-wrap">
-          <img src="/api/preview/${encodeURIComponent(img.filename)}" alt="${img.filename}">
+          <img src="${previewUrl(img)}" alt="${img.desc}">
           <span class="card-img-label">Original</span>
         </div>
       </div>
@@ -348,9 +468,7 @@ function renderGrid() {
   }).join("");
 }
 
-function css(name) {
-  return name.replace(/[^a-zA-Z0-9]/g, "_");
-}
+function css(name) { return name.replace(/[^a-zA-Z0-9]/g, "_"); }
 
 async function handleUpload(input) {
   const file = input.files[0];
@@ -365,11 +483,7 @@ async function handleUpload(input) {
   try {
     const res = await fetch("/api/upload-sample", { method: "POST", body: formData });
     const data = await res.json();
-
-    if (data.error) {
-      document.getElementById("uploadLabel").textContent = data.error;
-      return;
-    }
+    if (data.error) { document.getElementById("uploadLabel").textContent = data.error; return; }
 
     currentSample = data;
     document.getElementById("uploadBox").innerHTML = `<img src="data:image/jpeg;base64,${data.preview}">`;
@@ -381,10 +495,7 @@ async function handleUpload(input) {
 }
 
 function startRecolor() {
-  if (!currentSample) {
-    alert("Please upload a fabric sample first.");
-    return;
-  }
+  if (!currentSample) { alert("Please upload a fabric sample first."); return; }
 
   const btn = document.getElementById("recolorBtn");
   btn.disabled = true;
@@ -396,9 +507,12 @@ function startRecolor() {
   progressContainer.style.display = "block";
   progressBar.style.width = "0%";
 
+  // Disable theme switching during processing
+  document.querySelectorAll(".theme-btn").forEach(b => b.disabled = true);
+
   // Reset all cards
-  images.forEach(img => {
-    const id = css(img.filename);
+  allImages.forEach(img => {
+    const id = css(img.key);
     document.getElementById("card-" + id).className = "card";
     document.getElementById("status-" + id).className = "card-status waiting";
     document.getElementById("status-" + id).textContent = "Waiting";
@@ -411,6 +525,7 @@ function startRecolor() {
   const params = new URLSearchParams({
     sample_id: currentSample.sample_id,
     ext: currentSample.ext,
+    theme: selectedTheme,
   });
   const evtSource = new EventSource(`/api/recolor-stream?${params}`);
 
@@ -418,12 +533,12 @@ function startRecolor() {
     const data = JSON.parse(event.data);
 
     if (data.type === "progress") {
-      const id = css(data.filename);
+      const id = css(data.key);
       document.getElementById("card-" + id).className = "card processing";
       const st = document.getElementById("status-" + id);
       st.className = "card-status processing";
       st.textContent = "Processing...";
-      statusText.textContent = `Processing ${data.index + 1}/${data.total}: ${data.filename}`;
+      statusText.textContent = `Processing ${data.index + 1}/${data.total}`;
       progressBar.style.width = ((data.index) / data.total * 100) + "%";
 
       const imgsDiv = document.getElementById("imgs-" + id);
@@ -437,7 +552,7 @@ function startRecolor() {
     }
 
     if (data.type === "result") {
-      const id = css(data.filename);
+      const id = css(data.key);
       const card = document.getElementById("card-" + id);
       const st = document.getElementById("status-" + id);
       const imgsDiv = document.getElementById("imgs-" + id);
@@ -459,8 +574,7 @@ function startRecolor() {
           wraps[1].innerHTML = `<div style="color:#f87171;padding:16px;font-size:12px;">${data.message}</div><span class="card-img-label">Error</span>`;
         }
       }
-
-      progressBar.style.width = ((data.index + 1) / images.length * 100) + "%";
+      progressBar.style.width = ((data.index + 1) / allImages.length * 100) + "%";
     }
 
     if (data.type === "done") {
@@ -469,6 +583,7 @@ function startRecolor() {
       btn.textContent = "Apply Fabric";
       statusText.textContent = `Done! Saved to ${data.output_dir}`;
       progressBar.style.width = "100%";
+      document.querySelectorAll(".theme-btn").forEach(b => b.disabled = false);
     }
   };
 
@@ -477,10 +592,11 @@ function startRecolor() {
     btn.disabled = false;
     btn.textContent = "Apply Fabric";
     statusText.textContent = "Connection error. Check console.";
+    document.querySelectorAll(".theme-btn").forEach(b => b.disabled = false);
   };
 }
 
-loadImages();
+init();
 </script>
 </body>
 </html>
@@ -491,6 +607,7 @@ if __name__ == "__main__":
         print("WARNING: GEMINI_API_KEY not set. Set it in .env")
         print()
     print(f"Input images: {INPUT_DIR}")
+    print(f"Theme images: {THEME_DIR}")
     print(f"Output dir:   {OUTPUT_BASE}")
     print()
     app.run(debug=True, port=5000)
