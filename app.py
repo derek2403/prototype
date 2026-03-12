@@ -330,57 +330,57 @@ FRONTEND_HTML = """<!DOCTYPE html>
 <title>Bedding Fabric Recolor Tool</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; min-height: 100vh; }
 
-  .header { background: #1a1a1a; border-bottom: 1px solid #333; padding: 20px 32px; }
+  .header { background: #ffffff; border-bottom: 1px solid #e0e0e0; padding: 20px 32px; }
   .header h1 { font-size: 20px; font-weight: 600; margin-bottom: 16px; }
   .controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 
   /* Theme selector */
   .theme-selector { display: flex; gap: 8px; }
-  .theme-btn { padding: 8px 18px; border-radius: 8px; border: 2px solid #333; background: #222; color: #aaa; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  .theme-btn:hover { border-color: #555; color: #ddd; }
-  .theme-btn.active { border-color: #4f46e5; color: #fff; background: #4f46e520; }
+  .theme-btn { padding: 8px 18px; border-radius: 8px; border: 2px solid #d0d0d0; background: #f0f0f0; color: #666; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .theme-btn:hover { border-color: #aaa; color: #333; }
+  .theme-btn.active { border-color: #4f46e5; color: #4f46e5; background: #4f46e510; }
 
   /* Upload area */
   .upload-area { display: flex; align-items: center; gap: 12px; }
-  .upload-box { width: 80px; height: 80px; border: 2px dashed #444; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; transition: border-color 0.2s; background: #222; }
+  .upload-box { width: 80px; height: 80px; border: 2px dashed #ccc; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; transition: border-color 0.2s; background: #fafafa; }
   .upload-box:hover { border-color: #4f46e5; }
   .upload-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
-  .upload-box .placeholder { color: #666; font-size: 11px; text-align: center; padding: 4px; line-height: 1.3; }
-  .upload-label { font-size: 13px; color: #aaa; max-width: 160px; }
+  .upload-box .placeholder { color: #999; font-size: 11px; text-align: center; padding: 4px; line-height: 1.3; }
+  .upload-label { font-size: 13px; color: #666; max-width: 160px; }
 
-  .divider { width: 1px; height: 40px; background: #333; }
+  .divider { width: 1px; height: 40px; background: #d0d0d0; }
 
   .btn { padding: 10px 24px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
   .btn-primary { background: #4f46e5; color: white; }
   .btn-primary:hover { background: #4338ca; }
-  .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .btn-primary:disabled { background: #e0e0e0; color: #999; cursor: not-allowed; }
 
-  .progress-bar-container { width: 100%; max-width: 400px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; display: none; }
+  .progress-bar-container { width: 100%; max-width: 400px; height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; display: none; }
   .progress-bar { height: 100%; background: #4f46e5; border-radius: 3px; transition: width 0.3s; width: 0%; }
-  .status-text { font-size: 13px; color: #888; min-width: 200px; }
+  .status-text { font-size: 13px; color: #777; min-width: 200px; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; padding: 24px 32px; }
-  .card { background: #1a1a1a; border-radius: 12px; overflow: hidden; border: 1px solid #2a2a2a; transition: border-color 0.2s; }
+  .card { background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e0e0e0; transition: border-color 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
   .card.processing { border-color: #4f46e5; }
-  .card.done { border-color: #22c55e; }
-  .card.error { border-color: #ef4444; }
-  .card-header { padding: 12px 16px; font-size: 13px; font-weight: 500; color: #999; border-bottom: 1px solid #2a2a2a; display: flex; justify-content: space-between; align-items: center; }
-  .card-header .badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: #4f46e520; color: #818cf8; margin-left: 8px; }
+  .card.done { border-color: #16a34a; }
+  .card.error { border-color: #dc2626; }
+  .card-header { padding: 12px 16px; font-size: 13px; font-weight: 500; color: #666; border-bottom: 1px solid #e8e8e8; display: flex; justify-content: space-between; align-items: center; }
+  .card-header .badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: #4f46e510; color: #4f46e5; margin-left: 8px; }
   .card-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
-  .card-status.waiting { background: #333; color: #888; }
-  .card-status.processing { background: #4f46e520; color: #818cf8; }
-  .card-status.done { background: #22c55e20; color: #4ade80; }
-  .card-status.error { background: #ef444420; color: #f87171; }
+  .card-status.waiting { background: #f0f0f0; color: #999; }
+  .card-status.processing { background: #4f46e510; color: #4f46e5; }
+  .card-status.done { background: #dcfce7; color: #16a34a; }
+  .card-status.error { background: #fee2e2; color: #dc2626; }
   .card-images { display: grid; grid-template-columns: 1fr 1fr; }
   .card-images.single { grid-template-columns: 1fr; }
-  .card-img-wrap { position: relative; aspect-ratio: 4/3; overflow: hidden; background: #111; }
+  .card-img-wrap { position: relative; aspect-ratio: 4/3; overflow: hidden; background: #f0f0f0; }
   .card-img-wrap img { width: 100%; height: 100%; object-fit: cover; }
-  .card-img-label { position: absolute; bottom: 6px; left: 6px; font-size: 10px; background: #000a; padding: 2px 6px; border-radius: 3px; color: #ccc; }
-  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #4f46e540; border-top-color: #818cf8; border-radius: 50%; animation: spin 0.8s linear infinite; margin: auto; }
+  .card-img-label { position: absolute; bottom: 6px; left: 6px; font-size: 10px; background: #fffc; padding: 2px 6px; border-radius: 3px; color: #333; }
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #4f46e530; border-top-color: #4f46e5; border-radius: 50%; animation: spin 0.8s linear infinite; margin: auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .card-img-wrap .spinner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #0008; }
+  .card-img-wrap .spinner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #fff8; }
 </style>
 </head>
 <body>
