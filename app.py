@@ -22,9 +22,51 @@ OUTPUT_BASE = BASE_DIR / "output"
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# ── Materials ──────────────────────────────────────────────────
+MATERIALS = {
+    "cotton": {
+        "label": "Cotton",
+        "texture": "soft matte cotton with a natural woven texture, slight creasing at folds",
+    },
+    "polyester": {
+        "label": "Polyester",
+        "texture": "smooth polyester with a slight synthetic sheen, wrinkle-resistant appearance",
+    },
+    "satin": {
+        "label": "Satin",
+        "texture": "glossy satin with a luxurious silky sheen, smooth reflective surface that catches light",
+    },
+    "silk": {
+        "label": "Silk",
+        "texture": "delicate silk with a soft natural luster, lightweight draping with fine texture",
+    },
+    "linen": {
+        "label": "Linen",
+        "texture": "textured linen with a natural slubby weave, slightly coarse organic look with visible fiber texture",
+    },
+    "velvet": {
+        "label": "Velvet",
+        "texture": "plush velvet with a rich deep pile, soft nap that changes shade with light direction",
+    },
+    "bamboo": {
+        "label": "Bamboo",
+        "texture": "smooth bamboo fabric with a subtle silky sheen, soft draping with a cool matte finish",
+    },
+    "microfiber": {
+        "label": "Microfiber",
+        "texture": "ultra-smooth microfiber with a velvety soft touch, uniform surface with minimal texture",
+    },
+    "jacquard": {
+        "label": "Jacquard",
+        "texture": "woven jacquard with an intricate raised pattern visible in the fabric surface, textured and elegant",
+    },
+    "flannel": {
+        "label": "Flannel",
+        "texture": "brushed flannel with a soft fuzzy nap, warm cozy appearance with slight pilling texture",
+    },
+}
+
 # ── Themes ──────────────────────────────────────────────────────
-# Each theme has 3 room images. "classy" uses originals from the theme dir.
-# The theme files map a canonical key to the actual filename on disk.
 THEMES = {
     "classy": {
         "label": "Classy",
@@ -53,8 +95,6 @@ THEMES = {
 }
 
 # ── Image configs ───────────────────────────────────────────────
-# "source": "resized" = always from WHITE/resized
-# "source": "theme"   = from output/themes/{theme}/
 IMAGE_CONFIGS = [
     {
         "key": "WHITE 10 ABC.jpg",
@@ -126,20 +166,21 @@ IMAGE_CONFIGS = [
 
 
 def resolve_source_path(cfg: dict, theme: str) -> Path:
-    """Get the actual file path for an image config given the selected theme."""
     if cfg["source"] == "resized":
         return INPUT_DIR / cfg["key"]
     else:
-        # theme image
         filename = THEMES[theme]["files"][cfg["key"]]
         return THEME_DIR / theme / filename
 
 
-def build_prompt(target: str) -> str:
+def build_prompt_with_sample(target: str, material_key: str) -> str:
+    """Prompt when user uploads a fabric sample image."""
+    mat = MATERIALS[material_key]
     return (
         f"I'm providing two images. The FIRST image is a fabric sample showing the color/pattern I want. "
         f"The SECOND image is a product photo with white bedding.\n\n"
         f"Apply the fabric sample's color and pattern to {target} in the product photo. "
+        f"The material is {mat['label'].lower()} — render it with {mat['texture']}. "
         f"The fabric should wrap realistically following the folds, creases and contours of the original white fabric. "
         f"Preserve all shadows, highlights, and depth. "
         f"Keep everything else in the scene (background, furniture, walls, floor, decorations, non-target items) exactly unchanged. "
@@ -147,10 +188,48 @@ def build_prompt(target: str) -> str:
     )
 
 
-def recolor_image(client, sample_bytes: bytes, sample_mime: str, image_path: Path, prompt: str) -> bytes | None:
+def build_prompt_with_color(target: str, hex_color: str, color_name: str, material_key: str) -> str:
+    """Prompt when user picks a hex color instead of uploading an image."""
+    mat = MATERIALS[material_key]
+    return (
+        f"Change {target} in this product photo to {color_name} ({hex_color}). "
+        f"The material is {mat['label'].lower()} — render it with {mat['texture']}. "
+        f"The fabric should look like naturally dyed {color_name} {mat['label'].lower()} with realistic shading and folds. "
+        f"Keep everything else in the scene (background, furniture, walls, floor, decorations, non-target items) exactly unchanged. "
+        f"The result must look like a natural, professional product photo."
+    )
+
+
+def hex_to_color_name(hex_color: str) -> str:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    if r > 200 and g < 80 and b < 80: return "red"
+    elif r > 200 and g > 150 and b < 80: return "golden yellow"
+    elif r > 200 and g > 200 and b < 80: return "yellow"
+    elif r < 80 and g > 200 and b < 80: return "green"
+    elif r < 80 and g > 200 and b > 200: return "cyan"
+    elif r < 80 and g < 80 and b > 200: return "blue"
+    elif r > 100 and g < 80 and b > 200: return "purple"
+    elif r > 200 and g < 80 and b > 200: return "magenta"
+    elif r > 200 and g > 100 and b > 100 and g < 180: return "salmon pink"
+    elif r > 150 and g > 100 and b < 80: return "warm brown"
+    elif abs(r - g) < 30 and abs(g - b) < 30:
+        if r > 200: return "light grey"
+        elif r > 128: return "grey"
+        elif r > 50: return "dark grey"
+        else: return "near black"
+    elif r < 100 and g > 80 and b < 100: return "dark green"
+    elif r < 80 and g < 80 and b > 100: return "dark blue"
+    elif r > 150 and g < 100 and b < 100: return "dark red"
+    elif r > 200 and g > 180 and b > 150: return "cream"
+    elif r > 150 and g > 120 and b > 80 and r > g: return "tan"
+    else: return f"the color #{hex_color}"
+
+
+def photograph_with_sample(client, sample_bytes, sample_mime, image_path, prompt):
+    """Send fabric sample + product image to Gemini."""
     with open(image_path, "rb") as f:
         product_bytes = f.read()
-
     product_mime = "image/jpeg" if image_path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
 
     response = client.models.generate_content(
@@ -160,11 +239,28 @@ def recolor_image(client, sample_bytes: bytes, sample_mime: str, image_path: Pat
             types.Part.from_bytes(data=product_bytes, mime_type=product_mime),
             prompt,
         ],
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-        ),
+        config=types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"]),
     )
+    for part in response.candidates[0].content.parts:
+        if part.inline_data is not None:
+            return part.inline_data.data
+    return None
 
+
+def photograph_with_color(client, image_path, prompt):
+    """Send only the product image + color prompt to Gemini."""
+    with open(image_path, "rb") as f:
+        product_bytes = f.read()
+    product_mime = "image/jpeg" if image_path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+
+    response = client.models.generate_content(
+        model="gemini-3.1-flash-image-preview",
+        contents=[
+            types.Part.from_bytes(data=product_bytes, mime_type=product_mime),
+            prompt,
+        ],
+        config=types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"]),
+    )
     for part in response.candidates[0].content.parts:
         if part.inline_data is not None:
             return part.inline_data.data
@@ -181,6 +277,11 @@ def index():
 @app.route("/api/themes")
 def list_themes():
     return jsonify([{"key": k, "label": v["label"]} for k, v in THEMES.items()])
+
+
+@app.route("/api/materials")
+def list_materials():
+    return jsonify([{"key": k, "label": v["label"]} for k, v in MATERIALS.items()])
 
 
 @app.route("/api/images")
@@ -200,13 +301,11 @@ def list_images():
 
 @app.route("/api/preview/<path:filename>")
 def preview_image(filename):
-    """Serve from WHITE/resized."""
     return send_from_directory(str(INPUT_DIR), filename)
 
 
 @app.route("/api/preview-theme/<theme>/<path:key>")
 def preview_theme_image(theme, key):
-    """Serve a theme-based room image."""
     if theme not in THEMES or key not in THEMES[theme]["files"]:
         return "Not found", 404
     filename = THEMES[theme]["files"][key]
@@ -217,7 +316,6 @@ def preview_theme_image(theme, key):
 def upload_sample():
     if "sample" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-
     file = request.files["sample"]
     if file.filename == "":
         return jsonify({"error": "No file selected"}), 400
@@ -239,29 +337,46 @@ def upload_sample():
     return jsonify({"sample_id": sample_id, "ext": ext, "preview": preview_b64})
 
 
-@app.route("/api/recolor-stream")
-def recolor_stream():
+@app.route("/api/photograph-stream")
+def photograph_stream():
+    """SSE endpoint: apply fabric sample or color to all product images."""
+    # Input mode: either sample image or hex color
     sample_id = request.args.get("sample_id", "").strip()
     sample_ext = request.args.get("ext", ".jpg").strip()
+    hex_color = request.args.get("hex_color", "").strip()
     theme = request.args.get("theme", "classy").strip()
+    material = request.args.get("material", "cotton").strip()
 
-    if not sample_id:
-        return jsonify({"error": "No sample_id provided"}), 400
+    use_sample = bool(sample_id)
+    use_color = bool(hex_color) and not use_sample
+
+    if not use_sample and not use_color:
+        return jsonify({"error": "Provide a sample image or hex color"}), 400
     if theme not in THEMES:
         return jsonify({"error": f"Unknown theme: {theme}"}), 400
-
-    sample_path = UPLOAD_DIR / f"{sample_id}{sample_ext}"
-    if not sample_path.exists():
-        return jsonify({"error": "Sample not found. Upload again."}), 404
+    if material not in MATERIALS:
+        return jsonify({"error": f"Unknown material: {material}"}), 400
 
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         return jsonify({"error": "GEMINI_API_KEY not set"}), 500
 
-    sample_bytes = sample_path.read_bytes()
-    sample_mime = "image/jpeg" if sample_ext in (".jpg", ".jpeg") else "image/png"
+    sample_bytes = None
+    sample_mime = None
+    color_name = None
 
-    output_dir = OUTPUT_BASE / f"{sample_id}_{theme}"
+    if use_sample:
+        sample_path = UPLOAD_DIR / f"{sample_id}{sample_ext}"
+        if not sample_path.exists():
+            return jsonify({"error": "Sample not found. Upload again."}), 404
+        sample_bytes = sample_path.read_bytes()
+        sample_mime = "image/jpeg" if sample_ext in (".jpg", ".jpeg") else "image/png"
+        folder_name = f"{sample_id}_{material}_{theme}"
+    else:
+        color_name = hex_to_color_name(hex_color)
+        folder_name = f"{hex_color.lstrip('#')}_{material}_{theme}"
+
+    output_dir = OUTPUT_BASE / folder_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
     client = genai.Client(api_key=api_key)
@@ -270,7 +385,6 @@ def recolor_stream():
         total = len(IMAGE_CONFIGS)
 
         for i, cfg in enumerate(IMAGE_CONFIGS):
-            display_name = cfg["desc"]
             yield f"data: {json.dumps({'type': 'progress', 'index': i, 'total': total, 'key': cfg['key'], 'status': 'processing'})}\n\n"
 
             input_path = resolve_source_path(cfg, theme)
@@ -278,10 +392,13 @@ def recolor_stream():
                 yield f"data: {json.dumps({'type': 'result', 'index': i, 'key': cfg['key'], 'status': 'error', 'message': f'Source not found: {input_path.name}'})}\n\n"
                 continue
 
-            prompt = build_prompt(cfg["target"])
-
             try:
-                img_bytes = recolor_image(client, sample_bytes, sample_mime, input_path, prompt)
+                if use_sample:
+                    prompt = build_prompt_with_sample(cfg["target"], material)
+                    img_bytes = photograph_with_sample(client, sample_bytes, sample_mime, input_path, prompt)
+                else:
+                    prompt = build_prompt_with_color(cfg["target"], hex_color, color_name, material)
+                    img_bytes = photograph_with_color(client, input_path, prompt)
 
                 if img_bytes:
                     img = Image.open(io.BytesIO(img_bytes))
@@ -327,28 +444,45 @@ FRONTEND_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bedding Fabric Recolor Tool</title>
+<title>Bedding Product Photographing Tool</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; min-height: 100vh; }
 
   .header { background: #ffffff; border-bottom: 1px solid #e0e0e0; padding: 20px 32px; }
   .header h1 { font-size: 20px; font-weight: 600; margin-bottom: 16px; }
-  .controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 
-  /* Theme selector */
-  .theme-selector { display: flex; gap: 8px; }
-  .theme-btn { padding: 8px 18px; border-radius: 8px; border: 2px solid #d0d0d0; background: #f0f0f0; color: #666; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  .theme-btn:hover { border-color: #aaa; color: #333; }
-  .theme-btn.active { border-color: #4f46e5; color: #4f46e5; background: #4f46e510; }
+  .controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .control-group { display: flex; flex-direction: column; gap: 4px; }
+  .control-group label { font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Theme & material selectors */
+  .pill-selector { display: flex; gap: 4px; }
+  .pill-btn { padding: 6px 14px; border-radius: 6px; border: 2px solid #d0d0d0; background: #f0f0f0; color: #666; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .pill-btn:hover { border-color: #aaa; color: #333; }
+  .pill-btn.active { border-color: #4f46e5; color: #4f46e5; background: #4f46e510; }
+
+  /* Material dropdown */
+  .material-select { padding: 7px 12px; border-radius: 6px; border: 2px solid #d0d0d0; background: #f0f0f0; color: #333; font-size: 12px; font-weight: 600; cursor: pointer; outline: none; }
+  .material-select:focus { border-color: #4f46e5; }
+
+  /* Input mode tabs */
+  .input-tabs { display: flex; gap: 0; border: 2px solid #d0d0d0; border-radius: 6px; overflow: hidden; }
+  .input-tab { padding: 6px 14px; background: #f0f0f0; color: #666; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+  .input-tab.active { background: #4f46e5; color: white; }
 
   /* Upload area */
-  .upload-area { display: flex; align-items: center; gap: 12px; }
-  .upload-box { width: 80px; height: 80px; border: 2px dashed #ccc; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; transition: border-color 0.2s; background: #fafafa; }
+  .input-area { display: flex; align-items: center; gap: 12px; }
+  .upload-box { width: 64px; height: 64px; border: 2px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; transition: border-color 0.2s; background: #fafafa; flex-shrink: 0; }
   .upload-box:hover { border-color: #4f46e5; }
-  .upload-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
-  .upload-box .placeholder { color: #999; font-size: 11px; text-align: center; padding: 4px; line-height: 1.3; }
-  .upload-label { font-size: 13px; color: #666; max-width: 160px; }
+  .upload-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+  .upload-box .placeholder { color: #999; font-size: 10px; text-align: center; padding: 4px; line-height: 1.3; }
+  .upload-label { font-size: 12px; color: #666; max-width: 120px; }
+
+  /* Color input */
+  .color-input-group { display: flex; align-items: center; gap: 8px; background: #f0f0f0; border-radius: 8px; padding: 6px 12px; border: 2px solid #d0d0d0; }
+  .color-input-group input[type="color"] { width: 32px; height: 32px; border: none; border-radius: 4px; cursor: pointer; background: none; }
+  .color-input-group input[type="text"] { width: 80px; background: transparent; border: none; color: #333; font-size: 14px; font-family: monospace; outline: none; }
 
   .divider { width: 1px; height: 40px; background: #d0d0d0; }
 
@@ -381,23 +515,54 @@ FRONTEND_HTML = """<!DOCTYPE html>
   .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #4f46e530; border-top-color: #4f46e5; border-radius: 50%; animation: spin 0.8s linear infinite; margin: auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .card-img-wrap .spinner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #fff8; }
+
+  .hidden { display: none !important; }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>Bedding Fabric Recolor Tool</h1>
+  <h1>Bedding Product Photographing Tool</h1>
   <div class="controls">
-    <div class="theme-selector" id="themeSelector"></div>
+
+    <div class="control-group">
+      <label>Theme</label>
+      <div class="pill-selector" id="themeSelector"></div>
+    </div>
+
+    <div class="control-group">
+      <label>Material</label>
+      <select class="material-select" id="materialSelect"></select>
+    </div>
+
     <div class="divider"></div>
-    <div class="upload-area">
+
+    <div class="control-group">
+      <label>Input</label>
+      <div class="input-tabs">
+        <button class="input-tab active" onclick="setInputMode('image')">Image</button>
+        <button class="input-tab" onclick="setInputMode('color')">Color</button>
+      </div>
+    </div>
+
+    <!-- Image upload input -->
+    <div class="input-area" id="imageInputArea">
       <div class="upload-box" id="uploadBox" onclick="document.getElementById('fileInput').click()">
-        <div class="placeholder" id="uploadPlaceholder">Upload fabric sample</div>
+        <div class="placeholder" id="uploadPlaceholder">Upload sample</div>
       </div>
       <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleUpload(this)">
       <div class="upload-label" id="uploadLabel">Upload a fabric sample</div>
     </div>
-    <button class="btn btn-primary" id="recolorBtn" onclick="startRecolor()" disabled>Apply Fabric</button>
+
+    <!-- Color picker input -->
+    <div class="input-area hidden" id="colorInputArea">
+      <div class="color-input-group">
+        <input type="color" id="colorPicker" value="#4A90D9">
+        <input type="text" id="hexInput" value="#4A90D9" placeholder="#RRGGBB">
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="photographBtn" onclick="startPhotograph()" disabled>Photograph</button>
     <div class="progress-bar-container" id="progressContainer">
       <div class="progress-bar" id="progressBar"></div>
     </div>
@@ -410,28 +575,75 @@ FRONTEND_HTML = """<!DOCTYPE html>
 <script>
 let allImages = [];
 let themes = [];
+let materials = [];
 let selectedTheme = "classy";
+let selectedMaterial = "cotton";
+let inputMode = "image"; // "image" or "color"
 let currentSample = null;
 
+// Sync color picker <-> hex input
+document.getElementById("colorPicker").addEventListener("input", e => {
+  document.getElementById("hexInput").value = e.target.value.toUpperCase();
+});
+document.getElementById("hexInput").addEventListener("input", e => {
+  let v = e.target.value;
+  if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+    document.getElementById("colorPicker").value = v;
+  }
+});
+
 async function init() {
-  const res = await fetch("/api/themes");
-  themes = await res.json();
+  const [themesRes, materialsRes] = await Promise.all([
+    fetch("/api/themes"),
+    fetch("/api/materials"),
+  ]);
+  themes = await themesRes.json();
+  materials = await materialsRes.json();
   renderThemeButtons();
+  renderMaterialSelect();
   await loadImages();
+  updateButtonState();
 }
 
 function renderThemeButtons() {
-  const container = document.getElementById("themeSelector");
-  container.innerHTML = themes.map(t =>
-    `<button class="theme-btn ${t.key === selectedTheme ? 'active' : ''}"
-            data-theme="${t.key}" onclick="selectTheme('${t.key}')">${t.label}</button>`
+  document.getElementById("themeSelector").innerHTML = themes.map(t =>
+    `<button class="pill-btn ${t.key === selectedTheme ? 'active' : ''}"
+            onclick="selectTheme('${t.key}')">${t.label}</button>`
   ).join("");
+}
+
+function renderMaterialSelect() {
+  document.getElementById("materialSelect").innerHTML = materials.map(m =>
+    `<option value="${m.key}" ${m.key === selectedMaterial ? 'selected' : ''}>${m.label}</option>`
+  ).join("");
+  document.getElementById("materialSelect").addEventListener("change", e => {
+    selectedMaterial = e.target.value;
+  });
 }
 
 async function selectTheme(key) {
   selectedTheme = key;
   renderThemeButtons();
   await loadImages();
+}
+
+function setInputMode(mode) {
+  inputMode = mode;
+  document.querySelectorAll(".input-tab").forEach(t => t.classList.remove("active"));
+  document.querySelector(`.input-tab[onclick="setInputMode('${mode}')"]`).classList.add("active");
+
+  document.getElementById("imageInputArea").classList.toggle("hidden", mode !== "image");
+  document.getElementById("colorInputArea").classList.toggle("hidden", mode !== "color");
+  updateButtonState();
+}
+
+function updateButtonState() {
+  const btn = document.getElementById("photographBtn");
+  if (inputMode === "image") {
+    btn.disabled = !currentSample;
+  } else {
+    btn.disabled = false;
+  }
 }
 
 async function loadImages() {
@@ -478,7 +690,6 @@ async function handleUpload(input) {
   formData.append("sample", file);
 
   document.getElementById("uploadLabel").textContent = "Uploading...";
-  document.getElementById("recolorBtn").disabled = true;
 
   try {
     const res = await fetch("/api/upload-sample", { method: "POST", body: formData });
@@ -488,18 +699,16 @@ async function handleUpload(input) {
     currentSample = data;
     document.getElementById("uploadBox").innerHTML = `<img src="data:image/jpeg;base64,${data.preview}">`;
     document.getElementById("uploadLabel").textContent = file.name;
-    document.getElementById("recolorBtn").disabled = false;
+    updateButtonState();
   } catch (e) {
     document.getElementById("uploadLabel").textContent = "Upload failed: " + e.message;
   }
 }
 
-function startRecolor() {
-  if (!currentSample) { alert("Please upload a fabric sample first."); return; }
-
-  const btn = document.getElementById("recolorBtn");
+function startPhotograph() {
+  const btn = document.getElementById("photographBtn");
   btn.disabled = true;
-  btn.textContent = "Processing...";
+  btn.textContent = "Photographing...";
 
   const progressContainer = document.getElementById("progressContainer");
   const progressBar = document.getElementById("progressBar");
@@ -507,8 +716,7 @@ function startRecolor() {
   progressContainer.style.display = "block";
   progressBar.style.width = "0%";
 
-  // Disable theme switching during processing
-  document.querySelectorAll(".theme-btn").forEach(b => b.disabled = true);
+  document.querySelectorAll(".pill-btn, .input-tab, .material-select").forEach(b => b.disabled = true);
 
   // Reset all cards
   allImages.forEach(img => {
@@ -522,12 +730,15 @@ function startRecolor() {
     while (wraps.length > 1) wraps[wraps.length - 1].remove();
   });
 
-  const params = new URLSearchParams({
-    sample_id: currentSample.sample_id,
-    ext: currentSample.ext,
-    theme: selectedTheme,
-  });
-  const evtSource = new EventSource(`/api/recolor-stream?${params}`);
+  const params = new URLSearchParams({ theme: selectedTheme, material: selectedMaterial });
+  if (inputMode === "image" && currentSample) {
+    params.set("sample_id", currentSample.sample_id);
+    params.set("ext", currentSample.ext);
+  } else {
+    params.set("hex_color", document.getElementById("hexInput").value.trim().toUpperCase());
+  }
+
+  const evtSource = new EventSource(`/api/photograph-stream?${params}`);
 
   evtSource.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -537,8 +748,8 @@ function startRecolor() {
       document.getElementById("card-" + id).className = "card processing";
       const st = document.getElementById("status-" + id);
       st.className = "card-status processing";
-      st.textContent = "Processing...";
-      statusText.textContent = `Processing ${data.index + 1}/${data.total}`;
+      st.textContent = "Photographing...";
+      statusText.textContent = `Photographing ${data.index + 1}/${data.total}`;
       progressBar.style.width = ((data.index) / data.total * 100) + "%";
 
       const imgsDiv = document.getElementById("imgs-" + id);
@@ -546,7 +757,7 @@ function startRecolor() {
         imgsDiv.className = "card-images";
         const wrap = document.createElement("div");
         wrap.className = "card-img-wrap";
-        wrap.innerHTML = '<div class="spinner-overlay"><div class="spinner"></div></div><span class="card-img-label">Recolored</span>';
+        wrap.innerHTML = '<div class="spinner-overlay"><div class="spinner"></div></div><span class="card-img-label">Generated</span>';
         imgsDiv.appendChild(wrap);
       }
     }
@@ -563,7 +774,7 @@ function startRecolor() {
         st.textContent = "Done";
         const wraps = imgsDiv.querySelectorAll(".card-img-wrap");
         if (wraps.length > 1) {
-          wraps[1].innerHTML = `<img src="data:image/jpeg;base64,${data.preview}" alt="Recolored"><span class="card-img-label">Recolored</span>`;
+          wraps[1].innerHTML = `<img src="data:image/jpeg;base64,${data.preview}" alt="Generated"><span class="card-img-label">Generated</span>`;
         }
       } else {
         card.className = "card error";
@@ -571,7 +782,7 @@ function startRecolor() {
         st.textContent = "Error";
         const wraps = imgsDiv.querySelectorAll(".card-img-wrap");
         if (wraps.length > 1) {
-          wraps[1].innerHTML = `<div style="color:#f87171;padding:16px;font-size:12px;">${data.message}</div><span class="card-img-label">Error</span>`;
+          wraps[1].innerHTML = `<div style="color:#dc2626;padding:16px;font-size:12px;">${data.message}</div><span class="card-img-label">Error</span>`;
         }
       }
       progressBar.style.width = ((data.index + 1) / allImages.length * 100) + "%";
@@ -580,19 +791,19 @@ function startRecolor() {
     if (data.type === "done") {
       evtSource.close();
       btn.disabled = false;
-      btn.textContent = "Apply Fabric";
+      btn.textContent = "Photograph";
       statusText.textContent = `Done! Saved to ${data.output_dir}`;
       progressBar.style.width = "100%";
-      document.querySelectorAll(".theme-btn").forEach(b => b.disabled = false);
+      document.querySelectorAll(".pill-btn, .input-tab, .material-select").forEach(b => b.disabled = false);
     }
   };
 
   evtSource.onerror = () => {
     evtSource.close();
     btn.disabled = false;
-    btn.textContent = "Apply Fabric";
+    btn.textContent = "Photograph";
     statusText.textContent = "Connection error. Check console.";
-    document.querySelectorAll(".theme-btn").forEach(b => b.disabled = false);
+    document.querySelectorAll(".pill-btn, .input-tab, .material-select").forEach(b => b.disabled = false);
   };
 }
 
