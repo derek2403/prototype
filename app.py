@@ -444,7 +444,7 @@ FRONTEND_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bedding Product Photographing Tool</title>
+<title>Eastern Decorator AI Content Factory</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; min-height: 100vh; }
@@ -522,7 +522,7 @@ FRONTEND_HTML = """<!DOCTYPE html>
 <body>
 
 <div class="header">
-  <h1>Bedding Product Photographing Tool</h1>
+  <h1>Eastern Decorator AI Content Factory</h1>
   <div class="controls">
 
     <div class="control-group">
@@ -821,4 +821,4 @@ if __name__ == "__main__":
     print(f"Theme images: {THEME_DIR}")
     print(f"Output dir:   {OUTPUT_BASE}")
     print()
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)
